@@ -22,9 +22,17 @@
       <div v-else class="text-h6">Ждём второго игрока...</div>
     </div>
 
-    <!-- Центр: код комнаты -->
-    <div class="row justify-center items-center">
-      <div class="text-h5">Код комнаты: <span class="text-primary">{{ roomCode }}</span></div>
+        <!-- Центр: код комнаты и QR код -->
+    <div v-if="!opponentConnected" class="column items-center q-gutter-y-md">
+      <div class="text-h5 cursor-pointer" @click="copyRoomCode">
+        Код комнаты: <span class="text-primary">{{ roomCode }}</span>
+        <q-icon name="content_copy" size="sm" class="q-ml-sm" />
+      </div>
+
+      <!-- QR код (скрывается при подключении второго игрока) -->
+      <div class="qr-container">
+        <canvas ref="qrCanvas" width="200" height="200"></canvas>
+      </div>
     </div>
 
     <!-- Нижняя половина: ресурсы игрока -->
@@ -62,9 +70,12 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useQuasar } from 'quasar'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const route = useRoute()
+const $q = useQuasar()
 
 // Код комнаты из маршрута
 const roomCode = route.params.code
@@ -77,6 +88,9 @@ const opponentResources = ref([0, 0, 0, 0, 0])
 
 // Флаг подключения противника (заглушка)
 const opponentConnected = ref(false)
+
+// Ссылка на canvas для QR кода
+const qrCanvas = ref(null)
 
 const resourceEmojis = ['🏰', '🛡️', '🧱', '🔮', '🐉']
 
@@ -96,7 +110,58 @@ function changeResource(idx, delta) {
   playerResources.value[idx] = newValue
 }
 
+// Функция копирования кода комнаты в буфер обмена
+async function copyRoomCode() {
+  try {
+    await navigator.clipboard.writeText(roomCode)
+    showNotification()
+  } catch {
+    // Fallback для старых браузеров
+    const textArea = document.createElement('textarea')
+    textArea.value = roomCode
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+
+    showNotification()
+  }
+}
+
+// Функция показа уведомления
+function showNotification() {
+  $q.notify({
+    type: 'positive',
+    message: 'Код комнаты скопирован! ✔',
+    position: 'top',
+    timeout: 2000,
+    icon: 'content_copy'
+  })
+}
+
+// Генерация QR кода
+async function generateQRCode() {
+  if (!qrCanvas.value) return
+
+  try {
+    const roomUrl = `${window.location.origin}/room/${roomCode}`
+    await QRCode.toCanvas(qrCanvas.value, roomUrl, {
+      width: 200,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    })
+  } catch (err) {
+    console.error('Ошибка генерации QR кода:', err)
+  }
+}
+
 onMounted(() => {
+  // Генерируем QR код
+  generateQRCode()
+
   // Здесь будет логика подключения к комнате и получения данных о противнике
   // Пока что для теста можно через setTimeout эмулировать подключение второго игрока
   setTimeout(() => {
@@ -123,5 +188,14 @@ onMounted(() => {
   font-size: 1.3em;
   margin-right: 4px;
   user-select: none;
+}
+.qr-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>
