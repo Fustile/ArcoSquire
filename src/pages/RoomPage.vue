@@ -1,0 +1,127 @@
+<template>
+  <q-page class="column justify-between q-pa-md" style="height: 100vh;">
+    <!-- Верхняя четверть: ресурсы противника или ожидание -->
+    <div class="row justify-center items-center" style="height: 25vh;">
+      <div v-if="opponentConnected" class="row q-gutter-md">
+        <q-input
+          v-for="(value, idx) in opponentResources"
+          :key="idx"
+          :model-value="value"
+          outlined
+          dense
+          readonly
+          style="width: 100px;"
+          input-class="right-align-input no-spin"
+          :max="50"
+        >
+          <template #prepend>
+            <span class="emoji-prepend">{{ resourceEmojis[idx] }}</span>
+          </template>
+        </q-input>
+      </div>
+      <div v-else class="text-h6">Ждём второго игрока...</div>
+    </div>
+
+    <!-- Центр: код комнаты -->
+    <div class="row justify-center items-center">
+      <div class="text-h5">Код комнаты: <span class="text-primary">{{ roomCode }}</span></div>
+    </div>
+
+    <!-- Нижняя половина: ресурсы игрока -->
+    <div class="column items-center" style="height: 40vh;">
+      <div class="row q-gutter-md">
+        <div v-for="(value, idx) in playerResources" :key="idx" class="column items-center">
+          <img src="~assets/arrow2.svg" style="width: 32px; margin-bottom: -24px; transform: rotate(-90deg); cursor: pointer;" @click="changeResource(idx, 5)" />
+          <img src="~assets/arrow.svg" style="width: 32px; margin-bottom: 0px; transform: rotate(-90deg); cursor: pointer;" @click="changeResource(idx, 1)" />
+          <q-input
+            v-model="playerResources[idx]"
+            outlined
+            dense
+            type="number"
+            style="width: 100px;"
+            :min="0"
+            :max="50"
+            @update:model-value="onResourceInput(idx)"
+            input-class="right-align-input no-spin"
+          >
+            <template #prepend>
+              <span class="emoji-prepend">{{ resourceEmojis[idx] }}</span>
+            </template>
+          </q-input>
+          <img src="~assets/arrow.svg" style="width: 32px; margin-top: 0px; transform: rotate(90deg); cursor: pointer;" @click="changeResource(idx, -1)" />
+          <img src="~assets/arrow2.svg" style="width: 32px; margin-top: -24px; transform: rotate(90deg); cursor: pointer;" @click="changeResource(idx, -5)" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Кнопка Домой -->
+    <q-btn icon="home" label="Домой" color="primary" flat class="absolute-top-left q-ma-md" @click="goHome" />
+  </q-page>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+const router = useRouter()
+const route = useRoute()
+
+// Код комнаты из маршрута
+const roomCode = route.params.code
+
+// Ресурсы игрока (5 чисел)
+const playerResources = ref([0, 0, 0, 0, 0])
+
+// Ресурсы противника (5 чисел, только для отображения)
+const opponentResources = ref([0, 0, 0, 0, 0])
+
+// Флаг подключения противника (заглушка)
+const opponentConnected = ref(false)
+
+const resourceEmojis = ['🏰', '🛡️', '🧱', '🔮', '🐉']
+
+function goHome() {
+  router.push('/')
+}
+
+function onResourceInput(idx) {
+  // Оставляем только цифры и неотрицательные значения, максимум 50
+  let val = playerResources.value[idx]
+  val = val === '' ? 0 : Math.max(0, Math.min(50, parseInt(val) || 0))
+  playerResources.value[idx] = val
+}
+
+function changeResource(idx, delta) {
+  const newValue = Math.max(0, Math.min(50, (parseInt(playerResources.value[idx]) || 0) + delta))
+  playerResources.value[idx] = newValue
+}
+
+onMounted(() => {
+  // Здесь будет логика подключения к комнате и получения данных о противнике
+  // Пока что для теста можно через setTimeout эмулировать подключение второго игрока
+  setTimeout(() => {
+    opponentConnected.value = true
+    opponentResources.value = [5, 10, 3, 7, 2]
+  }, 3000)
+})
+</script>
+
+<style scoped>
+:deep(.no-spin)::-webkit-inner-spin-button,
+:deep(.no-spin)::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+:deep(.no-spin) {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.right-align-input {
+  text-align: right;
+}
+.emoji-prepend {
+  font-size: 1.3em;
+  margin-right: 4px;
+  user-select: none;
+}
+</style>
