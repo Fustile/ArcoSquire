@@ -19,10 +19,16 @@
           </template>
         </q-input>
       </div>
-      <div v-else class="text-h6">Ждём второго игрока...</div>
+      <div v-else class="text-h6">
+        Ждём второго игрока...
+        <div class="text-caption q-mt-sm">
+          Статус: {{ isConnected ? 'Подключен' : 'Отключен' }} |
+          Противник: {{ opponentConnected ? 'Подключен' : 'Не подключен' }}
+        </div>
+      </div>
     </div>
 
-        <!-- Центр: код комнаты и QR код -->
+    <!-- Центр: код комнаты и QR код -->
     <div v-if="!opponentConnected" class="column items-center q-gutter-y-md">
       <div class="text-h5 cursor-pointer" @click="copyRoomCode">
         Код комнаты: <span class="text-primary">{{ roomCode }}</span>
@@ -64,14 +70,22 @@
 
     <!-- Кнопка Домой -->
     <q-btn icon="home" label="Домой" color="primary" flat class="absolute-top-left q-ma-md" @click="goHome" />
+
+    <!-- Компонент статуса подключения -->
+    <ConnectionStatus
+      :is-connected="isConnected"
+      :is-connecting="isConnecting"
+    />
   </q-page>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import QRCode from 'qrcode'
+import socketService from '../services/socketService'
+import ConnectionStatus from '../components/ConnectionStatus.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -86,8 +100,12 @@ const playerResources = ref([0, 0, 0, 0, 0])
 // Ресурсы противника (5 чисел, только для отображения)
 const opponentResources = ref([0, 0, 0, 0, 0])
 
-// Флаг подключения противника (заглушка)
+// Флаг подключения противника
 const opponentConnected = ref(false)
+
+// Флаг подключения к серверу
+const isConnected = ref(false)
+const isConnecting = ref(false)
 
 // Ссылка на canvas для QR кода
 const qrCanvas = ref(null)
@@ -95,6 +113,8 @@ const qrCanvas = ref(null)
 const resourceEmojis = ['🏰', '🛡️', '🧱', '🔮', '🐉']
 
 function goHome() {
+  // Отключаемся от комнаты перед переходом
+  socketService.leaveRoom()
   router.push('/')
 }
 
@@ -158,16 +178,178 @@ async function generateQRCode() {
   }
 }
 
+// Обработчики Socket.io событий
+function onRoomJoined(data) {
+  console.log('Успешно присоединился к комнате:', data)
+  isConnected.value = true
+  isConnecting.value = false
+
+  // Проверяем, есть ли уже другой игрок в комнате
+  if (data.players && data.players.length > 1) {
+    console.log('В комнате уже есть другой игрок')
+    opponentConnected.value = true
+    // Запрашиваем ресурсы противника
+    requestOpponentResources()
+  }
+
+  // Запрашиваем текущее состояние игры
+  requestGameState()
+
+  $q.notify({
+    type: 'positive',
+    message: 'Подключен к комнате',
+    position: 'top',
+    timeout: 2000
+  })
+}
+
+function onPlayerJoined(data) {
+  console.log('Второй игрок присоединился:', data)
+  // Не устанавливаем opponentConnected здесь, ждем game-started
+  $q.notify({
+    type: 'positive',
+    message: 'Второй игрок присоединился!',
+    position: 'top',
+    timeout: 3000
+  })
+}
+
+function onGameStarted(data) {
+  console.log('Игра началась:', data)
+  // Устанавливаем флаг подключения противника только когда игра началась
+  opponentConnected.value = true
+
+  // Запрашиваем текущие ресурсы противника
+  requestOpponentResources()
+
+  $q.notify({
+    type: 'positive',
+    message: 'Игра началась!',
+    position: 'top',
+    timeout: 3000
+  })
+}
+
+function onResourcesUpdated(data) {
+  console.log('Получены обновленные ресурсы:', data)
+
+  // Обновляем ресурсы противника только если они пришли от другого игрока
+  // и это не наши собственные ресурсы
+  if (data.playerId && data.playerId !== socketService.playerId && data.resources) {
+    opponentResources.value = data.resources
+    console.log('Обновлены ресурсы противника:', opponentResources.value)
+  }
+
+  // Обрабатываем специальное событие с ресурсами противника
+  if (data.type === 'opponent-resources' && data.resources) {
+    opponentResources.value = data.resources
+    console.log('Получены ресурсы противника:', opponentResources.value)
+  }
+
+  // Обрабатываем состояние игры
+  if (data.type === 'game-state') {
+    console.log('Обрабатываем состояние игры:', data)
+    if (data.players && data.players.length > 1) {
+      opponentConnected.value = true
+    }
+    if (data.opponentResources) {
+      opponentResources.value = data.opponentResources
+      console.log('Установлены ресурсы противника из состояния игры:', opponentResources.value)
+    }
+  }
+
+  // Дополнительная проверка: не обновляем ресурсы противника, если это наши ресурсы
+  if (data.playerId === socketService.playerId) {
+    console.log('Игнорируем собственные ресурсы в блоке противника')
+    return
+  }
+}
+
+// Функция для запроса текущих ресурсов противника
+function requestOpponentResources() {
+  socketService.getOpponentResources()
+}
+
+// Функция для запроса состояния игры
+function requestGameState() {
+  socketService.getGameState()
+}
+
+// Обработчик полной комнаты
+function onRoomFull(data) {
+  console.log('Комната полная:', data)
+  $q.notify({
+    type: 'warning',
+    message: 'Комната полная! Перенаправление на главную страницу...',
+    position: 'top',
+    timeout: 3000
+  })
+
+  // Перенаправляем на главную страницу через 3 секунды
+  setTimeout(() => {
+    router.push('/')
+  }, 3000)
+}
+
+// Обработчик выхода игрока
+function onPlayerLeft(data) {
+  console.log('Игрок покинул комнату:', data)
+  opponentConnected.value = false
+  opponentResources.value = [0, 0, 0, 0, 0]
+
+  $q.notify({
+    type: 'warning',
+    message: 'Противник покинул комнату',
+    position: 'top',
+    timeout: 5000
+  })
+}
+
+function onError(error) {
+  console.error('Ошибка от сервера:', error)
+  isConnecting.value = false
+  $q.notify({
+    type: 'negative',
+    message: `Ошибка: ${error.message || 'Неизвестная ошибка'}`,
+    position: 'top',
+    timeout: 5000
+  })
+}
+
+// Подключение к комнате
+function connectToRoom() {
+  isConnecting.value = true
+  socketService.joinRoom(
+    roomCode,
+    onRoomJoined,
+    onPlayerJoined,
+    onGameStarted,
+    onResourcesUpdated,
+    onError,
+    onRoomFull,
+    onPlayerLeft
+  )
+}
+
+// Отслеживаем изменения ресурсов игрока и отправляем на сервер
+watch(playerResources, (newResources) => {
+  if (isConnected.value) {
+    console.log('Отправляем ресурсы на сервер:', newResources)
+    socketService.updateResources(newResources)
+  }
+}, { deep: true })
+
 onMounted(() => {
   // Генерируем QR код
   generateQRCode()
 
-  // Здесь будет логика подключения к комнате и получения данных о противнике
-  // Пока что для теста можно через setTimeout эмулировать подключение второго игрока
-  setTimeout(() => {
-    opponentConnected.value = true
-    opponentResources.value = [5, 10, 3, 7, 2]
-  }, 3000)
+  // Подключаемся к комнате
+  connectToRoom()
+})
+
+onUnmounted(() => {
+  // Отключаемся от комнаты при уходе со страницы
+  socketService.leaveRoom()
 })
 </script>
 

@@ -1,43 +1,76 @@
-# ArcoSquire (arcosquire)
+# ArcoSquire
 
-Arcomage resource tracker
+Frontend для ArcoMage card game с интеграцией Socket.io для real-time обмена данными
 
-## Install the dependencies
+## Возможности
 
+- ✅ Создание комнат через REST API
+- ✅ Подключение к комнатам по коду
+- ✅ Real-time обмен ресурсами между игроками
+- ✅ Управление ресурсами (5 чисел, диапазон 0-50)
+- ✅ QR код для быстрого подключения
+- ✅ Индикатор статуса подключения
+- ✅ Автоматическая синхронизация ресурсов
+
+## Установка и запуск
+
+1. Установите зависимости:
 ```bash
-yarn
-# or
 npm install
 ```
 
-### Start the app in development mode (hot-code reloading, error reporting, etc.)
+2. Убедитесь, что бекенд запущен на `http://localhost:3001`
 
+3. Запустите фронтенд:
 ```bash
-quasar dev
+npm run dev
 ```
 
-### Lint the files
+Приложение будет доступно на `http://localhost:9000`
 
-```bash
-yarn lint
-# or
-npm run lint
+## Интеграция с бекендом
+
+### REST API
+- Создание комнат через `POST /api/rooms`
+- Проверка существования комнат через `GET /api/rooms/:roomId`
+
+### Socket.io Events
+- `join-room` - Присоединение к комнате
+- `update-resources` - Обновление ресурсов игрока
+- `room-joined` - Подтверждение присоединения
+- `player-joined` - Новый игрок присоединился
+- `game-started` - Игра началась
+- `resources-updated` - Ресурсы обновлены
+
+## Структура проекта
+
+```
+src/
+├── components/
+│   └── ConnectionStatus.vue    # Индикатор подключения
+├── pages/
+│   ├── IndexPage.vue          # Главная страница
+│   └── RoomPage.vue           # Страница комнаты
+├── services/
+│   ├── apiService.js          # REST API сервис
+│   └── socketService.js       # Socket.io сервис
+└── router/
+    └── index.js               # Маршрутизация
 ```
 
-### Format the files
+## Формат данных
 
-```bash
-yarn format
-# or
-npm run format
+Ресурсы передаются как массив из 5 чисел (диапазон 0-50):
+```javascript
+[resource1, resource2, resource3, resource4, resource5]
 ```
 
-### Build the app for production
+## Автоматическое обновление
 
-```bash
-quasar build
-```
+При каждом изменении ресурсов игрока (через кнопки или ввод) данные автоматически отправляются на сервер и синхронизируются с противником.
 
-### Customize the configuration
+## Требования
 
-See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).
+- Node.js 18+
+- Бекенд ArcoSquire-back на порту 3001
+- Современный браузер с поддержкой WebSocket

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест бекенда ArcoSquire</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .primary { background: #007bff; color: white; }
+        .secondary { background: #6c757d; color: white; }
+        input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тест бекенда ArcoSquire</h1>
+    
+    <div id="status" class="status disconnected">
+        Статус: Отключен
+    </div>
+    
+    <div>
+        <input type="text" id="roomId" placeholder="Код комнаты" value="TEST1">
+        <button class="primary" onclick="joinRoom()">Присоединиться к комнате</button>
+        <button class="secondary" onclick="createRoom()">Создать комнату</button>
+    </div>
+    
+    <div>
+        <h3>Ресурсы игрока:</h3>
+        <div id="playerResources">
+            <input type="number" id="res1" value="0" min="0" max="50" onchange="updateResources()">
+            <input type="number" id="res2" value="0" min="0" max="50" onchange="updateResources()">
+            <input type="number" id="res3" value="0" min="0" max="50" onchange="updateResources()">
+            <input type="number" id="res4" value="0" min="0" max="50" onchange="updateResources()">
+            <input type="number" id="res5" value="0" min="0" max="50" onchange="updateResources()">
+        </div>
+    </div>
+    
+    <div>
+        <h3>Ресурсы противника:</h3>
+        <div id="opponentResources">
+            <input type="number" id="opp1" value="0" readonly>
+            <input type="number" id="opp2" value="0" readonly>
+            <input type="number" id="opp3" value="0" readonly>
+            <input type="number" id="opp4" value="0" readonly>
+            <input type="number" id="opp5" value="0" readonly>
+        </div>
+    </div>
+    
+    <div>
+        <h3>Лог событий:</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let currentRoomId = null;
+        let playerId = null;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = 'Статус: Подключен';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = 'Статус: Отключен';
+            }
+        }
+
+        function connect() {
+            if (socket) return;
+
+            socket = io('http://localhost:3001', {
+                transports: ['websocket', 'polling']
+            });
+
+            socket.on('connect', () => {
+                log('Подключен к серверу');
+                updateStatus(true);
+            });
+
+            socket.on('disconnect', () => {
+                log('Отключен от сервера');
+                updateStatus(false);
+            });
+
+            socket.on('room-joined', (data) => {
+                log(`Присоединился к комнате: ${JSON.stringify(data)}`);
+                playerId = data.playerId;
+            });
+
+            socket.on('player-joined', (data) => {
+                log(`Новый игрок присоединился: ${JSON.stringify(data)}`);
+            });
+
+            socket.on('game-started', (data) => {
+                log(`Игра началась: ${JSON.stringify(data)}`);
+            });
+
+            socket.on('resources-updated', (data) => {
+                log(`Ресурсы обновлены: ${JSON.stringify(data)}`);
+                // Обновляем ресурсы противника только если они пришли от другого игрока
+                if (data.playerId && data.playerId !== playerId && data.resources) {
+                    updateOpponentResources(data.resources);
+                    log(`Обновлены ресурсы противника: ${JSON.stringify(data.resources)}`);
+                } else if (data.playerId === playerId) {
+                    log(`Игнорируем собственные ресурсы в блоке противника`);
+                }
+            });
+
+            socket.on('opponent-resources', (data) => {
+                log(`Получены ресурсы противника: ${JSON.stringify(data)}`);
+                if (data.resources) {
+                    updateOpponentResources(data.resources);
+                }
+            });
+
+            socket.on('room-full', (data) => {
+                log(`Комната полная: ${JSON.stringify(data)}`);
+                updateStatus(false);
+            });
+
+            socket.on('player-left', (data) => {
+                log(`Игрок покинул комнату: ${JSON.stringify(data)}`);
+                // Сбрасываем ресурсы противника
+                updateOpponentResources([0, 0, 0, 0, 0]);
+            });
+
+            socket.on('game-state', (data) => {
+                log(`Получено состояние игры: ${JSON.stringify(data)}`);
+                if (data.opponentResources) {
+                    updateOpponentResources(data.opponentResources);
+                }
+            });
+
+            socket.on('error', (error) => {
+                log(`Ошибка: ${error.message || error}`);
+            });
+        }
+
+        function joinRoom() {
+            const roomId = document.getElementById('roomId').value;
+            if (!roomId) {
+                alert('Введите код комнаты');
+                return;
+            }
+
+            connect();
+            currentRoomId = roomId;
+            socket.emit('join-room', roomId);
+            log(`Запрос на присоединение к комнате: ${roomId}`);
+        }
+
+        async function createRoom() {
+            try {
+                const response = await fetch('http://localhost:3001/api/rooms', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                log(`Создана комната: ${JSON.stringify(data)}`);
+                document.getElementById('roomId').value = data.roomId;
+            } catch (error) {
+                log(`Ошибка создания комнаты: ${error.message}`);
+            }
+        }
+
+        function updateResources() {
+            if (!socket || !currentRoomId) return;
+
+            const resources = [
+                parseInt(document.getElementById('res1').value) || 0,
+                parseInt(document.getElementById('res2').value) || 0,
+                parseInt(document.getElementById('res3').value) || 0,
+                parseInt(document.getElementById('res4').value) || 0,
+                parseInt(document.getElementById('res5').value) || 0
+            ];
+
+            socket.emit('update-resources', {
+                roomId: currentRoomId,
+                resources: resources
+            });
+            
+            log(`Отправлены ресурсы: ${JSON.stringify(resources)}`);
+        }
+
+        function updateOpponentResources(resources) {
+            document.getElementById('opp1').value = resources[0] || 0;
+            document.getElementById('opp2').value = resources[1] || 0;
+            document.getElementById('opp3').value = resources[2] || 0;
+            document.getElementById('opp4').value = resources[3] || 0;
+            document.getElementById('opp5').value = resources[4] || 0;
+        }
+
+        // Инициализация
+        log('Тест бекенда запущен');
+    </script>
+</body>
+</html>
